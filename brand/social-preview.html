@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="pl"><head><meta charset="utf-8">
+<title>CzystyPrompt — social preview</title>
+<style>
+@font-face { font-family: Sora; src: url(../app/fonts/Sora-Regular.woff2); font-weight: 400; }
+@font-face { font-family: Sora; src: url(../app/fonts/Sora-SemiBold.woff2); font-weight: 600; }
+@font-face { font-family: Sora; src: url(../app/fonts/Sora-Bold.woff2); font-weight: 700; }
+:root { --paper: #f4f1ea; --paper-2: #fbf9f4; --ink: #1a1a2e; --muted: #625f70; --violet: #9e30de; --line: #d9d3c4; }
+* { box-sizing: border-box; margin: 0; }
+body { width: 1280px; height: 640px; background: var(--paper); color: var(--ink); font-family: Sora, sans-serif; position: relative; overflow: hidden; }
+.wrap { position: absolute; inset: 64px 72px 56px; display: flex; flex-direction: column; }
+.head { display: flex; align-items: center; gap: 26px; }
+.head h1 { font-size: 76px; font-weight: 600; letter-spacing: -.02em; line-height: 1; }
+.tag { font-size: 29px; line-height: 1.38; color: var(--ink); margin-top: 26px; max-width: 980px; }
+.tag b { font-weight: 600; }
+.doc { margin-top: 34px; background: var(--paper-2); border: 1.5px solid var(--line); border-left: 4px solid var(--ink);
+  padding: 6px 26px; font-size: 25px; line-height: 52px;
+  background-image: repeating-linear-gradient(transparent 0 51px, #e6e0d2 51px 52px); }
+.doc .row { display: flex; gap: 16px; align-items: baseline; }
+.doc .lbl { width: 92px; flex: none; font-size: 15px; font-weight: 600; color: var(--muted); text-transform: none; }
+.real { text-decoration: line-through; text-decoration-color: var(--violet); text-decoration-thickness: 2px; color: var(--muted); }
+mark { background: rgba(158, 48, 222, .13); color: var(--ink); border-bottom: 3px solid var(--violet); padding: 0 3px; }
+.foot { margin-top: auto; display: flex; align-items: flex-end; justify-content: space-between; border-top: 2px solid var(--ink); padding-top: 18px; }
+.url { font-size: 27px; font-weight: 700; }
+.facts { font-size: 19px; color: var(--muted); margin-top: 4px; }
+.by { font-size: 19px; color: var(--muted); }
+.by b { color: var(--ink); font-weight: 600; }
+</style></head><body>
+<div class="wrap">
+  <div class="head">
+    <svg width="92" height="92" viewBox="0 0 32 32" aria-hidden="true"><rect x="3.5" y="3.5" width="25" height="25" rx="3" fill="none" stroke="#1a1a2e" stroke-width="2.6"/><path d="M8.5 10h15M8.5 22.5h10" stroke="#1a1a2e" stroke-width="2.6" opacity=".35"/><rect x="8.5" y="13.8" width="15" height="5" fill="#9e30de"/></svg>
+    <h1>CzystyPrompt</h1>
+  </div>
+  <p class="tag">Ukryj dane osobowe, zanim wkleisz tekst do AI. <b>Przywróć je w&nbsp;odpowiedzi — w&nbsp;poprawnej polskiej odmianie.</b></p>
+  <div class="doc">
+    <div class="row"><span class="lbl">Twój tekst</span><span>Rozmowę z <span class="real">Janem Kowalskim</span> prowadziła <span class="real">Kasia</span> z kadr.</span></div>
+    <div class="row"><span class="lbl">Do AI</span><span>Rozmowę z <mark>Adamem Lewandowskim</mark> prowadziła <mark>Asia</mark> z kadr.</span></div>
+  </div>
+  <div class="foot">
+    <div><div class="url">czystyprompt.nocodework.io</div><div class="facts">Open source · jeden plik HTML · działa bez internetu · nic nie wychodzi z komputera</div></div>
+    <div class="by">by <b>NoCodeWork</b></div>
+  </div>
+</div>
+</body></html>
