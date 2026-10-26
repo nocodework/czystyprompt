@@ -1,0 +1,7 @@
+node_modules/
+data-raw/
+.DS_Store
+*.log
+czystyprompt-sesja-*.json
+design/
+STAN.md

@@ -1,0 +1,14 @@
+{
+  "name": "czystyprompt",
+  "version": "0.1.0",
+  "description": "Pseudonimizacja polskich danych osobowych przed wysłaniem tekstu do AI. Działa lokalnie, bez sieci.",
+  "type": "module",
+  "license": "MIT",
+  "main": "src/index.js",
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "build": "node scripts/build.mjs",
+    "data": "./scripts/fetch-data.sh && node scripts/build-data.mjs && node scripts/build-common.mjs"
+  },
+  "engines": { "node": ">=20" }
+}

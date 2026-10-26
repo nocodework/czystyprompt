@@ -1,0 +1,16 @@
+CzystyPrompt — informacje o źródłach danych i licencjach komponentów
+
+1. Kod źródłowy: MIT (plik LICENSE).
+
+2. src/data/names.js — imiona i nazwiska z rejestru PESEL, opublikowane przez
+   Ministerstwo Cyfryzacji na portalu dane.gov.pl:
+   - „Lista imion występujących w rejestrze PESEL” (imiona pierwsze osób żyjących, stan 2020-01-21),
+   - „Nazwiska występujące w rejestrze PESEL” (stan 2019-04-15).
+   Informacja publiczna udostępniona do ponownego wykorzystywania.
+
+3. src/data/common.js — lista form imion i nazwisk, które są też częstymi słowami.
+   Dane pochodne z FrequencyWords (Hermit Dave, https://github.com/hermitdave/FrequencyWords,
+   na podstawie OpenSubtitles 2018), licencja CC BY-SA 4.0. Ten plik udostępniamy na tej samej licencji.
+
+4. app/fonts/Sora-*.woff2 (osadzone w index.html) — font Sora, SIL Open Font License 1.1
+   (https://openfontlicense.org), Copyright The Sora Project Authors.
