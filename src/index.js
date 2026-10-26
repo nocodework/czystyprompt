@@ -4,4 +4,5 @@ export { Session, DEFAULT_OPTIONS, parseTerms, sensitiveWarnings } from './sessi
 export { CATEGORIES, detectStructured, validPesel, validNip, validRegon, validIban, validIdCard } from './detectors.js';
 export { paradigm, CASES } from './declension.js';
 export { parseList, detectPeople } from './people.js';
-export const VERSION = '0.1.0';
+export { detectTable, columnTag } from './table.js';
+export const VERSION = '0.2.0';

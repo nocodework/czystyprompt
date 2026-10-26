@@ -85,6 +85,7 @@ export const CATEGORIES = {
   adres: { label: 'Adres', tag: 'ADRES' },
   profil: { label: 'Profil w sieci', tag: 'PROFIL' },
   urodzenie: { label: 'Data urodzenia', tag: 'DATA-UR' },
+  wiek: { label: 'Wiek', tag: 'WIEK' },
   kwota: { label: 'Kwota', tag: 'KWOTA' },
   data: { label: 'Data', tag: 'DATA' },
 };
@@ -175,6 +176,11 @@ const RULES = [
     re: new RegExp(`(?:ur\\.|urodzon[${L}]*|data urodzenia:?|dat[${L}]* urodzenia:?)\\s*(?:dnia\\s+|w dniu\\s+)?(${DATE})`, 'giu'),
     group: 1,
   },
+  // wiek: „34-letni”, „35-latka”, „wiek: 52”, „Kowalski, lat 45”, „ma 29 lat”, „(41 l.)”
+  { cat: 'wiek', re: new RegExp(`${NB}\\d{1,3}\\s?-?\\s?(?:letni|latk|latek)[${L}]*`, 'giu') },
+  { cat: 'wiek', re: new RegExp(`${NB}(?:wiek|wieku|lat)\\s*:?\\s+(\\d{1,3})${NE}`, 'giu'), group: 1 },
+  { cat: 'wiek', re: new RegExp(`${NB}(?:ma|miał|miała|ma już|skończył|skończyła|skończy|kończy|ukończył|ukończyła)\\s+(\\d{1,3}\\s+(?:lat|lata|rok))${NE}`, 'giu'), group: 1 },
+  { cat: 'wiek', re: /\((\d{2}\s?(?:l\.|lat|lata))\)/giu, group: 1 },
   {
     cat: 'kwota',
     re: new RegExp(`(?<![\\d,.])\\d+(?:[ \\u00a0.]\\d{3})*(?:,\\d{1,2})?\\s?(?:zł|PLN|złotych|EUR|euro|€)(?:\\s+(?:brutto|netto))?${NE}`, 'giu'),

@@ -1,4 +1,4 @@
-import { Session, CATEGORIES, VERSION, parseList } from '../src/index.js';
+import { Session, CATEGORIES, VERSION, parseList, detectTable } from '../src/index.js';
 
 const $ = (s) => document.querySelector(s);
 const safe = (storage) => ({
@@ -9,10 +9,11 @@ const safe = (storage) => ({
 const local = safe(() => window.localStorage);
 const tab = safe(() => window.sessionStorage);
 
-const CAT_ORDER = ['pesel', 'nip', 'regon', 'konto', 'email', 'telefon', 'dokument', 'adres', 'urodzenie', 'profil', 'karta', 'kwota', 'data'];
+const CAT_ORDER = ['pesel', 'nip', 'regon', 'konto', 'email', 'telefon', 'dokument', 'adres', 'urodzenie', 'wiek', 'profil', 'karta', 'kwota', 'data'];
 const CAT_SHORT = { konto: 'Konto bankowe', dokument: 'Dowód, paszport', urodzenie: 'Data urodzenia', profil: 'Linki do profili', data: 'Wszystkie daty' };
 const els = {
-  people: $('#people'), terms: $('#terms'), cats: $('#cats'), optDict: $('#optDict'), remember: $('#remember'),
+  people: $('#people'), terms: $('#terms'), keep: $('#keep'), cats: $('#cats'), optDict: $('#optDict'), remember: $('#remember'),
+  tablebar: $('#tablebar'), tbInfo: $('#tbInfo'), chips: $('#chips'), hideSel: $('#hideSel'), pop: $('#pop'), popAction: $('#popAction'),
   src: $('#src'), masked: $('#masked'), stats: $('#stats'), warn: $('#warn'), copyMasked: $('#copyMasked'),
   ai: $('#ai'), restored: $('#restored'), rstats: $('#rstats'), rwarn: $('#rwarn'), copyRestored: $('#copyRestored'),
   rows: $('#rows'), dictCount: $('#dictCount'), peopleCount: $('#peopleCount'), toast: $('#toast'),
@@ -50,6 +51,7 @@ els.remember.checked = remembered;
 if (remembered) {
   els.people.value = local.get('czystyprompt.people') ?? '';
   els.terms.value = local.get('czystyprompt.terms') ?? '';
+  els.keep.value = local.get('czystyprompt.keep') ?? '';
   try { writeOptions(JSON.parse(local.get('czystyprompt.options') ?? '{}')); } catch { writeOptions(defaults); }
 } else writeOptions(defaults);
 
@@ -58,9 +60,10 @@ function persistSettings() {
     local.set('czystyprompt.remember', '1');
     local.set('czystyprompt.people', els.people.value);
     local.set('czystyprompt.terms', els.terms.value);
+    local.set('czystyprompt.keep', els.keep.value);
     local.set('czystyprompt.options', JSON.stringify(readOptions()));
   } else {
-    for (const k of ['czystyprompt.remember', 'czystyprompt.people', 'czystyprompt.terms', 'czystyprompt.options']) local.del(k);
+    for (const k of ['czystyprompt.remember', 'czystyprompt.people', 'czystyprompt.terms', 'czystyprompt.keep', 'czystyprompt.options']) local.del(k);
   }
 }
 
@@ -77,6 +80,7 @@ try {
 const apply = (s) => {
   if (s.peopleText !== els.people.value) s.setPeople(els.people.value);
   if (s.termsText !== els.terms.value) s.setTerms(els.terms.value);
+  if (s.keepText !== els.keep.value) s.setKeep(els.keep.value);
   s.setOptions(readOptions());
   return s;
 };
@@ -88,16 +92,17 @@ const saveSession = () => tab.set('czystyprompt.session', JSON.stringify(committ
 const esc = (s) => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const catName = (cat) => {
   if (cat === 'osoba') return 'osoba';
+  if (cat === 'kolumna') return 'komórka tabeli';
   const label = CATEGORIES[cat]?.label ?? 'ukryte';
   return label === label.toLocaleUpperCase('pl') ? label : label.toLocaleLowerCase('pl'); // PESEL zostaje PESEL
 };
 
 function renderSegments(target, segments, kind) {
   target.innerHTML = segments
-    .map((s) => {
+    .map((s, i) => {
       if (!s.cat) return esc(s.text);
-      const title = kind === 'mask' ? `Ukryte (${catName(s.cat)}): ${s.original}` : `W odpowiedzi AI było: ${s.original}`;
-      return `<mark class="${kind === 'mask' ? 'r' : 'back'}" data-cat="${esc(s.cat)}" title="${esc(title)}">${esc(s.text)}</mark>`;
+      const title = kind === 'mask' ? `Ukryte (${catName(s.cat)}): ${s.original}. Kliknij, żeby nie ukrywać.` : `W odpowiedzi AI było: ${s.original}`;
+      return `<mark class="${kind === 'mask' ? 'r' : 'back'}" data-cat="${esc(s.cat)}" data-i="${i}" title="${esc(title)}">${esc(s.text)}</mark>`;
     })
     .join('');
 }
@@ -119,9 +124,39 @@ function statsLine(stats) {
   return parts.length ? 'Ukryto: ' + parts.join(' · ') : 'Nie znaleziono danych osobowych. Przeczytaj tekst, zanim go wyślesz.';
 }
 
+// ---------- tabela z Excela ----------
+
+let table = null;
+let tableSig = '';
+let tableHide = [];
+function refreshTable() {
+  const tb = detectTable(els.src.value);
+  if (!tb) { table = null; tableSig = ''; els.tablebar.hidden = true; return; }
+  const sig = `${tb.delim}|${tb.header}|${tb.columns.map((c) => c.name).join('|')}|${tb.columns.length}`;
+  if (sig !== tableSig) { tableSig = sig; tableHide = previewSession().suggestColumns(tb); }
+  table = tb;
+  const rows = tb.rows.length - (tb.header ? 1 : 0);
+  const cols = tb.columns.length;
+  els.tbInfo.textContent = `Tabela: ${rows} ${plural(rows, 'wiersz', 'wiersze', 'wierszy')}, ${cols} ${plural(cols, 'kolumna', 'kolumny', 'kolumn')}.`;
+  els.chips.innerHTML = tb.columns
+    .map((c, i) => `<button class="chip" type="button" data-i="${i}" aria-pressed="${!!tableHide[i]}"><span class="l">${c.letter}</span>${esc(c.name || `Kolumna ${c.letter}`)}</button>`)
+    .join('');
+  els.tablebar.hidden = false;
+}
+const tableOpts = () => (table ? { table, hide: tableHide } : {});
+els.chips.addEventListener('click', (e) => {
+  const b = e.target.closest('.chip');
+  if (!b) return;
+  const i = Number(b.dataset.i);
+  tableHide[i] = !tableHide[i];
+  updateMasked();
+});
+
 let lastMasked = null;
 function updateMasked() {
   const text = els.src.value;
+  closePop();
+  refreshTable();
   if (!text.trim()) {
     els.masked.innerHTML = '';
     els.stats.textContent = '';
@@ -130,7 +165,7 @@ function updateMasked() {
     lastMasked = null;
     return;
   }
-  const r = previewSession().anonymize(text);
+  const r = previewSession().anonymize(text, tableOpts());
   lastMasked = r;
   renderSegments(els.masked, r.segments, 'mask');
   els.stats.innerHTML = statsLine(r.stats);
@@ -214,7 +249,8 @@ function toast(msg) {
 async function copyMasked() {
   if (!els.src.value.trim()) return;
   apply(committed);
-  const r = committed.anonymize(els.src.value);
+  refreshTable();
+  const r = committed.anonymize(els.src.value, tableOpts());
   saveSession();
   renderDict();
   const ok = await copy(r.text);
@@ -268,7 +304,7 @@ let timer;
 const debounce = (fn, ms = 120) => () => { clearTimeout(timer); timer = setTimeout(fn, ms); };
 els.src.addEventListener('input', debounce(updateMasked));
 els.ai.addEventListener('input', debounce(updateRestored));
-for (const el of [els.people, els.terms]) {
+for (const el of [els.people, els.terms, els.keep]) {
   el.addEventListener('input', debounce(() => { updatePeopleCount(); updateMasked(); persistSettings(); }, 200));
 }
 document.querySelector('aside.settings').addEventListener('change', (e) => {
@@ -332,6 +368,93 @@ $('#clear').addEventListener('click', () => {
   updateMasked();
   updateRestored();
 });
+
+// ---------- ręcznie: ukryj zaznaczone / nie ukrywaj ----------
+
+const sameLine = (a, b) => a.toLocaleLowerCase('pl') === b.toLocaleLowerCase('pl');
+const linesOf = (ta) => ta.value.split('\n').map((l) => l.trim()).filter(Boolean);
+function addLine(ta, line) {
+  const lines = linesOf(ta);
+  if (!lines.some((l) => sameLine(l.split('=')[0].trim(), line))) lines.push(line);
+  ta.value = lines.join('\n');
+}
+function removeLine(ta, line) {
+  ta.value = linesOf(ta).filter((l) => !sameLine(l, line)).join('\n');
+}
+const titleCase = (s) => s.replace(/(^|[\s-])(\p{Ll})/gu, (m, a, b) => a + b.toLocaleUpperCase('pl'));
+
+let pendingSel = '';
+function trackSelection() {
+  let t = '';
+  if (document.activeElement === els.src) {
+    t = els.src.value.slice(els.src.selectionStart, els.src.selectionEnd);
+  } else {
+    const sel = getSelection();
+    if (sel && !sel.isCollapsed && els.masked.contains(sel.anchorNode) && els.masked.contains(sel.focusNode)) {
+      // zaznaczenie zahaczające o już ukryte fragmenty pomijamy
+      const touchesMark = [...els.masked.querySelectorAll('mark')].some((m) => sel.containsNode(m, true));
+      if (!touchesMark) t = sel.toString();
+    }
+  }
+  t = t.trim().replace(/\s+/g, ' ');
+  if (t.length < 2 || t.length > 80 || /[\[\]]/.test(t)) t = '';
+  pendingSel = t;
+  els.hideSel.disabled = !t;
+  els.hideSel.textContent = t ? `Ukryj „${t.length > 24 ? t.slice(0, 23) + '…' : t}”` : 'Ukryj zaznaczone';
+}
+document.addEventListener('selectionchange', trackSelection);
+for (const ev of ['select', 'keyup', 'mouseup']) els.src.addEventListener(ev, trackSelection);
+els.hideSel.addEventListener('mousedown', (e) => e.preventDefault()); // nie zabieraj zaznaczenia
+els.hideSel.addEventListener('click', () => {
+  const t = pendingSel;
+  if (!t) return;
+  // „Jan Wiśniewski” → lista osób (odmiana, zdrobnienia); reszta → słowa do ukrycia
+  const person = /^\p{Lu}[\p{Ll}'’-]+(?:[ -]\p{Lu}[\p{Ll}'’-]+){1,2}$/u.test(t);
+  if (person) addLine(els.people, t);
+  else addLine(els.terms, t);
+  removeLine(els.keep, t);
+  updatePeopleCount();
+  persistSettings();
+  updateMasked();
+  toast(person ? `Dodane do „Twoi ludzie”: ${t}` : `Dodane do „Słowa do ukrycia”: ${t}`);
+  pendingSel = '';
+  els.hideSel.disabled = true;
+  els.hideSel.textContent = 'Ukryj zaznaczone';
+});
+
+let popDo = null;
+function closePop() { els.pop.hidden = true; popDo = null; }
+els.masked.addEventListener('click', (e) => {
+  const m = e.target.closest('mark.r');
+  if (!m || !getSelection().isCollapsed) return;
+  const seg = lastMasked?.segments[Number(m.dataset.i)];
+  if (!seg) return;
+  if (seg.cat === 'kolumna') {
+    const col = table?.columns[seg.col];
+    els.popAction.textContent = `Pokaż kolumnę „${col?.name || `Kolumna ${col?.letter ?? ''}`}”`;
+    popDo = () => { tableHide[seg.col] = false; updateMasked(); };
+  } else {
+    const word = seg.cat === 'osoba' && seg.base ? titleCase(seg.base) : seg.original;
+    els.popAction.textContent = `Nie ukrywaj „${word}”`;
+    popDo = () => {
+      addLine(els.keep, word);
+      persistSettings();
+      updateMasked();
+      toast(`„${word}” nie będzie ukrywane. Cofniesz to w ustawieniach: „Nie ukrywaj”.`);
+    };
+  }
+  const r = m.getBoundingClientRect();
+  els.pop.hidden = false;
+  const w = els.pop.offsetWidth;
+  els.pop.style.left = `${Math.max(8, Math.min(r.left + scrollX, scrollX + innerWidth - w - 8))}px`;
+  els.pop.style.top = `${r.bottom + scrollY + 6}px`;
+  els.popAction.focus();
+  e.stopPropagation();
+});
+els.popAction.addEventListener('click', () => { const f = popDo; closePop(); f?.(); });
+document.addEventListener('click', (e) => { if (!els.pop.hidden && !els.pop.contains(e.target)) closePop(); });
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closePop(); });
+addEventListener('resize', closePop);
 
 // motyw
 const theme = local.get('czystyprompt.theme');

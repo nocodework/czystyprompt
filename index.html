@@ -237,6 +237,28 @@ mark.r {
   cursor: help;
 }
 mark.r[data-cat='osoba'] { background: var(--accent-wash-2); }
+#masked mark.r { cursor: pointer; }
+#masked mark.r:hover { background: var(--accent-wash-2); }
+
+/* tabela z Excela: wybór kolumn */
+.tablebar { margin-top: 14px; border: 1.5px dashed var(--line-2); border-radius: 3px; padding: 12px 14px 14px; background: var(--sheet); }
+.tablebar[hidden] { display: none; }
+.tb-head { margin: 0; font-size: 13.5px; line-height: 1.5; color: var(--ink-2); }
+.tb-head b { color: var(--ink); font-weight: 600; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.chip {
+  appearance: none; cursor: pointer; min-height: 38px; padding: 0 12px; border: 1.5px solid var(--line-2); border-radius: 3px;
+  background: var(--paper); color: var(--ink-2); font: inherit; font-size: 13.5px; display: inline-flex; align-items: center; gap: 8px;
+}
+.chip .l { font-size: 11.5px; font-weight: 700; color: var(--muted); }
+.chip::before { content: ''; width: 12px; height: 5px; border: 1.5px solid var(--line-2); flex: none; }
+.chip[aria-pressed='true'] { border-color: var(--accent); background: var(--accent-wash); color: var(--ink); font-weight: 600; }
+.chip[aria-pressed='true']::before { background: var(--accent); border-color: var(--accent); }
+.chip:focus-visible { outline: none; box-shadow: var(--focus); }
+
+/* menu po kliknięciu podświetlenia */
+.pop { position: absolute; z-index: 20; background: var(--sheet); border: 1.5px solid var(--ink); border-radius: 3px; padding: 6px; box-shadow: 0 8px 22px rgba(26, 26, 46, 0.16); }
+.pop[hidden] { display: none; }
 mark.back {
   background: transparent;
   color: inherit;
@@ -382,6 +404,12 @@ footer.foot p.legal { flex-basis: 100%; max-width: none; font-size: 12px; opacit
       </section>
 
       <section class="sec">
+        <h2>Nie ukrywaj</h2>
+        <p class="hint">Słowa, które wyglądają jak nazwisko, a nim nie są (dział „Wilk”, sala „Piątek”). Najszybciej: kliknij podświetlenie w podglądzie.</p>
+        <textarea class="small" id="keep" spellcheck="false" style="min-height:72px" placeholder="Zespół Wilk&#10;Sala Piątek"></textarea>
+      </section>
+
+      <section class="sec">
         <h2>Co ukrywać</h2>
         <div class="checks" id="cats"></div>
         <label class="check" style="margin-top:6px"><input type="checkbox" id="optDict" checked><span class="box"></span>Inne imiona i nazwiska (słownik PESEL)</label>
@@ -414,14 +442,19 @@ footer.foot p.legal { flex-basis: 100%; max-width: none; font-size: 12px; opacit
           </div>
           <div class="pane">
             <div class="pane-head"><h3>Do wklejenia w AI</h3><span class="sub">bez danych osobowych</span></div>
-            <div class="doc out" id="masked" tabindex="0" data-empty="Tu pojawi się tekst bez danych osobowych. Najedź na podkreślenie, żeby zobaczyć oryginał."></div>
+            <div class="doc out" id="masked" tabindex="0" data-empty="Tu pojawi się tekst bez danych osobowych. Najedź na podświetlenie, żeby zobaczyć oryginał. Kliknij je, żeby nie ukrywać. Zaznacz słowo, żeby je ukryć."></div>
           </div>
+        </div>
+        <div class="tablebar" id="tablebar" hidden>
+          <p class="tb-head"><b id="tbInfo"></b> Kliknij kolumnę, żeby ją ukryć albo pokazać. Ukryte komórki dostaną znaczniki, np. [WIEK-1].</p>
+          <div class="chips" id="chips"></div>
         </div>
         <div class="bar">
           <button class="btn primary" id="copyMasked" disabled>
             <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true"><rect x="5.5" y="5.5" width="10" height="10" rx="1" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M3 12.5V3h9.5" fill="none" stroke="currentColor" stroke-width="1.7"/></svg>
             Kopiuj do AI
           </button>
+          <button class="btn ghost small" id="hideSel" disabled title="Zaznacz słowo w tekście albo w podglądzie">Ukryj zaznaczone</button>
           <span class="stats" id="stats"></span>
         </div>
         <div class="stamp" id="warn" hidden></div>
@@ -474,6 +507,7 @@ footer.foot p.legal { flex-basis: 100%; max-width: none; font-size: 12px; opacit
   </footer>
 </div>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
+<div class="pop" id="pop" role="dialog" aria-label="Zmień ukrywanie" hidden><button class="btn small" id="popAction" type="button"></button></div>
 <script type="module">
 const __m = Object.create(null);
 // ===== src/detectors.js =====
@@ -565,6 +599,7 @@ const CATEGORIES = {
   adres: { label: 'Adres', tag: 'ADRES' },
   profil: { label: 'Profil w sieci', tag: 'PROFIL' },
   urodzenie: { label: 'Data urodzenia', tag: 'DATA-UR' },
+  wiek: { label: 'Wiek', tag: 'WIEK' },
   kwota: { label: 'Kwota', tag: 'KWOTA' },
   data: { label: 'Data', tag: 'DATA' },
 };
@@ -655,6 +690,11 @@ const RULES = [
     re: new RegExp(`(?:ur\\.|urodzon[${L}]*|data urodzenia:?|dat[${L}]* urodzenia:?)\\s*(?:dnia\\s+|w dniu\\s+)?(${DATE})`, 'giu'),
     group: 1,
   },
+  // wiek: „34-letni”, „35-latka”, „wiek: 52”, „Kowalski, lat 45”, „ma 29 lat”, „(41 l.)”
+  { cat: 'wiek', re: new RegExp(`${NB}\\d{1,3}\\s?-?\\s?(?:letni|latk|latek)[${L}]*`, 'giu') },
+  { cat: 'wiek', re: new RegExp(`${NB}(?:wiek|wieku|lat)\\s*:?\\s+(\\d{1,3})${NE}`, 'giu'), group: 1 },
+  { cat: 'wiek', re: new RegExp(`${NB}(?:ma|miał|miała|ma już|skończył|skończyła|skończy|kończy|ukończył|ukończyła)\\s+(\\d{1,3}\\s+(?:lat|lata|rok))${NE}`, 'giu'), group: 1 },
+  { cat: 'wiek', re: /\((\d{2}\s?(?:l\.|lat|lata))\)/giu, group: 1 },
   {
     cat: 'kwota',
     re: new RegExp(`(?<![\\d,.])\\d+(?:[ \\u00a0.]\\d{3})*(?:,\\d{1,2})?\\s?(?:zł|PLN|złotych|EUR|euro|€)(?:\\s+(?:brutto|netto))?${NE}`, 'giu'),
@@ -1717,6 +1757,108 @@ function assignFake(entity, taken, common, hints = {}) {
 
 return { POOLS, caseSig, bestVariant, assignFake };
 })();
+// ===== src/table.js =====
+__m["src/table.js"] = (() => {
+// Tabele wklejone z Excela / Arkuszy Google (kolumny rozdzielone tabulatorem) albo CSV ze średnikiem.
+// Wykrywamy kolumny, podpowiadamy, które ukryć, a sesja zamienia ich komórki na znaczniki [WIEK-1].
+
+const NAME_HEADER = /imi[eę]|nazwisk|osoba|pracownik|kandydat|imię i nazwisko/i;
+// nagłówki kolumn, które domyślnie ukrywamy (dane identyfikujące, kontakt, wiek, pieniądze)
+const SENSITIVE_HEADER = new RegExp(
+  [
+    'imi[eę]', 'nazwisk', 'osoba', 'pracownik', 'kandydat', 'pesel', 'e-?mail', 'mail', 'telefon', '\\btel\\b', 'komórk',
+    'adres', 'ulica', 'miejscowo', 'kod poczt', 'wiek', 'urodz', 'wynagrodz', 'pensj', 'płac', 'zarob', 'stawk', 'brutto',
+    'netto', 'pensja', 'konto', 'iban', 'rachun', 'dow[oó]d', 'paszport', '\\bnip\\b', 'linkedin', 'login',
+  ].join('|'),
+  'i',
+);
+
+const excelLetter = (i) => {
+  let s = '';
+  for (let n = i + 1; n > 0; n = Math.floor((n - 1) / 26)) s = String.fromCharCode(65 + ((n - 1) % 26)) + s;
+  return s;
+};
+
+// Etykieta znacznika z nagłówka: „Wynagrodzenie brutto” → WYNAGRODZENIE-BRUTTO, „Imię i nazwisko” → OSOBA
+function columnTag(name, index) {
+  if (!name) return `KOLUMNA-${excelLetter(index)}`;
+  if (/imi[eę] i nazwisk|^osoba$|^pracownik$|^kandydat$/i.test(name.trim())) return 'OSOBA';
+  const tag = name
+    .toLocaleUpperCase('pl')
+    .replace(/[^A-ZĄĆĘŁŃÓŚŹŻ0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 24)
+    .replace(/-+$/, '');
+  return /^[A-ZĄĆĘŁŃÓŚŹŻ]/.test(tag) ? tag : `KOLUMNA-${excelLetter(index)}`;
+}
+
+// Zwraca null albo { delim, header, rows: [{ cells: [{ start, end, text }] }], columns: [{ index, letter, name, tag, suggested }] }
+function detectTable(text) {
+  const lines = [];
+  let pos = 0;
+  for (const raw of text.split('\n')) {
+    const line = raw.replace(/\r$/, '');
+    lines.push({ start: pos, text: line });
+    pos += raw.length + 1;
+  }
+  const filled = lines.filter((l) => l.text.trim());
+  if (filled.length < 2) return null;
+
+  for (const delim of ['\t', ';']) {
+    const counts = filled.map((l) => l.text.split(delim).length);
+    const withDelim = counts.filter((c) => c > 1).length;
+    if (withDelim < 2 || withDelim / filled.length < 0.8) continue;
+    // najczęstsza liczba kolumn
+    const freq = new Map();
+    for (const c of counts) if (c > 1) freq.set(c, (freq.get(c) ?? 0) + 1);
+    const [cols, n] = [...freq].sort((a, b) => b[1] - a[1])[0];
+    if (n / withDelim < 0.8) continue;
+    // średnik w zwykłym tekście: wymagamy krótkich komórek
+    if (delim === ';' && filled.some((l) => l.text.split(';').some((c) => c.trim().length > 60))) continue;
+
+    const rows = [];
+    for (const l of lines) {
+      if (!l.text.trim() || l.text.split(delim).length < 2) continue;
+      const cells = [];
+      let p = l.start;
+      for (const part of l.text.split(delim)) {
+        const lead = part.length - part.trimStart().length;
+        const t = part.trim();
+        cells.push({ start: p + lead, end: p + lead + t.length, text: t });
+        p += part.length + delim.length;
+      }
+      rows.push({ cells });
+    }
+    const first = rows[0].cells.map((c) => c.text);
+    const second = rows[1]?.cells.map((c) => c.text) ?? [];
+    const header =
+      first.every((c) => !/\d/.test(c)) &&
+      (first.some((c) => SENSITIVE_HEADER.test(c) || NAME_HEADER.test(c)) || second.some((c) => /\d/.test(c)));
+    const columns = [];
+    for (let i = 0; i < cols; i++) {
+      const name = header ? (first[i] ?? '').trim() : '';
+      columns.push({ index: i, letter: excelLetter(i), name, tag: columnTag(name, i), suggested: !!name && SENSITIVE_HEADER.test(name) });
+    }
+    return { delim, header, rows, columns };
+  }
+  return null;
+}
+
+// Komórki ukrywanych kolumn (bez wiersza nagłówka) jako fragmenty do podmiany
+function hiddenCells(table, hide) {
+  const out = [];
+  table.rows.forEach((row, r) => {
+    if (r === 0 && table.header) return;
+    row.cells.forEach((cell, i) => {
+      if (!hide[i] || !cell.text) return;
+      out.push({ start: cell.start, end: cell.end, value: cell.text, col: i, tag: table.columns[i]?.tag ?? `KOLUMNA-${excelLetter(i)}` });
+    });
+  });
+  return out;
+}
+
+return { columnTag, detectTable, hiddenCells };
+})();
 // ===== src/session.js =====
 __m["src/session.js"] = (() => {
 // Sesja: ukrywa dane w tekście i przywraca je w odpowiedzi AI.
@@ -1727,6 +1869,7 @@ const { dictionary, parseList, buildListIndex, detectPeople, tokenize, adjacent,
 const { paradigm, CASES, applyCasing, lower } = __m["src/declension.js"];
 const { SENSITIVE_TOPICS, DIMINUTIVES } = __m["src/data/lexicon.js"];
 const { assignFake, bestVariant } = __m["src/pseudonyms.js"];
+const { hiddenCells } = __m["src/table.js"];
 
 const DEFAULT_OPTIONS = {
   mode: 'natural', // 'natural' = zmyślone imiona i nazwiska, 'tags' = [OSOBA-1]
@@ -1734,12 +1877,12 @@ const DEFAULT_OPTIONS = {
   useDictionary: true,
   categories: {
     email: true, profil: true, konto: true, karta: true, pesel: true, nip: true, regon: true,
-    dokument: true, telefon: true, adres: true, urodzenie: true, kwota: false, data: false,
+    dokument: true, telefon: true, adres: true, urodzenie: true, wiek: true, kwota: false, data: false,
   },
   warnSensitive: true,
 };
 
-const PRIORITY = ['email', 'profil', 'custom', 'konto', 'karta', 'pesel', 'nip', 'regon', 'dokument', 'urodzenie', 'adres', 'telefon', 'osoba', 'kwota', 'data'];
+const PRIORITY = ['kolumna', 'email', 'profil', 'custom', 'konto', 'karta', 'pesel', 'nip', 'regon', 'dokument', 'urodzenie', 'wiek', 'adres', 'telefon', 'osoba', 'kwota', 'data'];
 const CASE_ORDER = ['M', 'D', 'B', 'C', 'N', 'Ms', 'W'];
 const pickCase = (cases) => CASE_ORDER.find((c) => cases.includes(c)) ?? 'M';
 const kindOf = (part) => (part === 'last' ? 'last' : 'first');
@@ -1761,7 +1904,7 @@ function parseTerms(text) {
 }
 
 class Session {
-  constructor({ people = '', terms = '', options = {} } = {}) {
+  constructor({ people = '', terms = '', keep = '', options = {} } = {}) {
     this.dict = dictionary();
     this.options = { ...DEFAULT_OPTIONS, ...options, categories: { ...DEFAULT_OPTIONS.categories, ...(options.categories ?? {}) } };
     this.entities = [];
@@ -1769,6 +1912,24 @@ class Session {
     this.listEntity = new Map(); // indeks osoby z listy → encja
     this.setPeople(people);
     this.setTerms(terms);
+    this.setKeep(keep);
+  }
+
+  // „Nie ukrywaj”: słowa, których użytkownik nie chce podmieniać (np. dział „Wilk”, nazwa produktu)
+  setKeep(text) {
+    this.keepText = text;
+    this.keep = new Set(text.split(/\r?\n/).map((l) => lower(l.trim())).filter(Boolean));
+  }
+
+  #kept(text, s) {
+    if (!this.keep.size) return false;
+    if (this.keep.has(lower(text.slice(s.start, s.end)))) return true;
+    if (s.cat === 'osoba') {
+      const named = s.mention.tokens.filter((x) => x.part !== 'initial');
+      if (this.keep.has(named.map((x) => lower(x.lemma ?? '')).join(' '))) return true;
+      return named.every((x) => this.keep.has(x.tok.low) || this.keep.has(lower(x.lemma ?? '')));
+    }
+    return false;
   }
 
   setPeople(text) {
@@ -1891,9 +2052,14 @@ class Session {
 
   // ---------- ukrywanie ----------
 
-  anonymize(text) {
+  // table: wynik detectTable(text), hide: [true/false dla kolumn] — komórki ukrytych kolumn → [WIEK-1]
+  anonymize(text, { table = null, hide = [] } = {}) {
     const opts = this.options;
     const spans = [];
+
+    if (table) {
+      for (const c of hiddenCells(table, hide)) spans.push({ start: c.start, end: c.end, cat: 'kolumna', tag: c.tag, col: c.col, value: c.value, norm: lower(c.value) });
+    }
 
     for (const t of this.terms) {
       for (const m of text.matchAll(t.re)) spans.push({ start: m.index, end: m.index + m[0].length, cat: 'custom', tag: t.label, value: m[0], norm: lower(t.term) });
@@ -1913,6 +2079,8 @@ class Session {
       if (chosen.some((c) => s.start < c.end && c.start < s.end)) continue;
       chosen.push(s);
     }
+    // „Nie ukrywaj” wygrywa z wykryciem, ale nie z ukrytą kolumną (tę użytkownik wybrał sam)
+    for (let i = chosen.length - 1; i >= 0; i--) if (chosen[i].cat !== 'kolumna' && this.#kept(text, chosen[i])) chosen.splice(i, 1);
     chosen.sort((a, b) => a.start - b.start);
 
     const segments = [];
@@ -1939,10 +2107,12 @@ class Session {
         const m = s.mention;
         const e = s.entity;
         const out = this.#renderMention(text, m, e);
-        segments.push({ text: out, original: text.slice(m.start, m.end), cat: 'osoba', entity: e.id, source: m.source });
+        // forma podstawowa („Piotr Wilk”) — do listy „Nie ukrywaj”
+        const base = m.tokens.filter((x) => x.part !== 'initial').map((x) => x.lemma).join(' ');
+        segments.push({ text: out, original: text.slice(m.start, m.end), cat: 'osoba', entity: e.id, source: m.source, base });
       } else {
         const tag = this.#valueTag(s.tag, s.norm, s.value);
-        segments.push({ text: tag, original: s.value, cat: s.cat });
+        segments.push({ text: tag, original: s.value, cat: s.cat, ...(s.col !== undefined ? { col: s.col } : {}) });
       }
       pos = s.end;
     }
@@ -2171,6 +2341,28 @@ class Session {
     return parts.map((x) => applyCasing(lower(x), 'title')).join(' ');
   }
 
+  // Które kolumny tabeli ukryć: nagłówek z danymi osobowymi albo co najmniej połowa komórek z wykrytą osobą lub numerem
+  suggestColumns(table) {
+    const body = table.rows.slice(table.header ? 1 : 0);
+    return table.columns.map((col) => {
+      if (col.suggested) return true;
+      // kolumny z notatkami zostają — nazwiska w nich i tak podmienimy, a reszta treści jest potrzebna AI
+      if (/uwag|notatk|komentarz|opis|ocena|feedback|notes?$/i.test(col.name)) return false;
+      const cells = body.map((r) => r.cells[col.index]?.text ?? '').filter(Boolean).slice(0, 50);
+      if (!cells.length) return false;
+      // kolumna z notatkami (dłuższe teksty) zostaje — nazwiska w niej i tak podmienimy
+      const words = cells.reduce((n, c) => n + c.split(/\s+/).length, 0) / cells.length;
+      if (words > 3) return false;
+      let hits = 0;
+      for (const c of cells) {
+        const found = detectStructured(c, this.options.categories).length ||
+          detectPeople(c, { dict: this.dict, listIndex: this.listIndex, useDictionary: this.options.useDictionary }).length;
+        if (found) hits++;
+      }
+      return hits / cells.length >= 0.6;
+    });
+  }
+
   // ---------- podgląd słownika i zapis ----------
 
   mapping() {
@@ -2192,6 +2384,7 @@ class Session {
       options: this.options,
       people: this.peopleText,
       terms: this.termsText,
+      keep: this.keepText,
       entities: this.entities,
       values: [...this.values].map(([tag, m]) => [tag, [...m]]),
     };
@@ -2199,7 +2392,7 @@ class Session {
 
   static fromJSON(data) {
     if (!['czystyprompt-sesja', 'maska-sesja'].includes(data?.format)) throw new Error('To nie jest plik sesji CzystyPrompt.');
-    const s = new Session({ people: data.people ?? '', terms: data.terms ?? '', options: data.options ?? {} });
+    const s = new Session({ people: data.people ?? '', terms: data.terms ?? '', keep: data.keep ?? '', options: data.options ?? {} });
     s.entities = data.entities ?? [];
     s.values = new Map((data.values ?? []).map(([tag, arr]) => [tag, new Map(arr)]));
     s.setPeople(s.peopleText);
@@ -2211,8 +2404,10 @@ function sensitiveWarnings(text) {
   const out = [];
   for (const t of SENSITIVE_TOPICS) {
     t.re.lastIndex = 0;
-    const found = new Set([...text.matchAll(t.re)].map((m) => m[0].toLocaleLowerCase('pl')));
-    if (found.size) out.push({ label: t.label, words: [...found].slice(0, 5) });
+    // bez powtórzeń, ale w pisowni z tekstu („L4”, nie „l4”, które wygląda jak „14”)
+    const found = new Map();
+    for (const m of text.matchAll(t.re)) if (!found.has(m[0].toLocaleLowerCase('pl'))) found.set(m[0].toLocaleLowerCase('pl'), m[0]);
+    if (found.size) out.push({ label: t.label, words: [...found.values()].slice(0, 5) });
   }
   return out;
 }
@@ -2227,13 +2422,14 @@ const { Session, DEFAULT_OPTIONS, parseTerms, sensitiveWarnings } = __m["src/ses
 const { CATEGORIES, detectStructured, validPesel, validNip, validRegon, validIban, validIdCard } = __m["src/detectors.js"];
 const { paradigm, CASES } = __m["src/declension.js"];
 const { parseList, detectPeople } = __m["src/people.js"];
-const VERSION = '0.1.0';
+const { detectTable, columnTag } = __m["src/table.js"];
+const VERSION = '0.2.0';
 
-return { Session, DEFAULT_OPTIONS, parseTerms, sensitiveWarnings, CATEGORIES, detectStructured, validPesel, validNip, validRegon, validIban, validIdCard, paradigm, CASES, parseList, detectPeople, VERSION };
+return { Session, DEFAULT_OPTIONS, parseTerms, sensitiveWarnings, CATEGORIES, detectStructured, validPesel, validNip, validRegon, validIban, validIdCard, paradigm, CASES, parseList, detectPeople, detectTable, columnTag, VERSION };
 })();
 // ===== app/app.js =====
 __m["app/app.js"] = (() => {
-const { Session, CATEGORIES, VERSION, parseList } = __m["src/index.js"];
+const { Session, CATEGORIES, VERSION, parseList, detectTable } = __m["src/index.js"];
 
 const $ = (s) => document.querySelector(s);
 const safe = (storage) => ({
@@ -2244,10 +2440,11 @@ const safe = (storage) => ({
 const local = safe(() => window.localStorage);
 const tab = safe(() => window.sessionStorage);
 
-const CAT_ORDER = ['pesel', 'nip', 'regon', 'konto', 'email', 'telefon', 'dokument', 'adres', 'urodzenie', 'profil', 'karta', 'kwota', 'data'];
+const CAT_ORDER = ['pesel', 'nip', 'regon', 'konto', 'email', 'telefon', 'dokument', 'adres', 'urodzenie', 'wiek', 'profil', 'karta', 'kwota', 'data'];
 const CAT_SHORT = { konto: 'Konto bankowe', dokument: 'Dowód, paszport', urodzenie: 'Data urodzenia', profil: 'Linki do profili', data: 'Wszystkie daty' };
 const els = {
-  people: $('#people'), terms: $('#terms'), cats: $('#cats'), optDict: $('#optDict'), remember: $('#remember'),
+  people: $('#people'), terms: $('#terms'), keep: $('#keep'), cats: $('#cats'), optDict: $('#optDict'), remember: $('#remember'),
+  tablebar: $('#tablebar'), tbInfo: $('#tbInfo'), chips: $('#chips'), hideSel: $('#hideSel'), pop: $('#pop'), popAction: $('#popAction'),
   src: $('#src'), masked: $('#masked'), stats: $('#stats'), warn: $('#warn'), copyMasked: $('#copyMasked'),
   ai: $('#ai'), restored: $('#restored'), rstats: $('#rstats'), rwarn: $('#rwarn'), copyRestored: $('#copyRestored'),
   rows: $('#rows'), dictCount: $('#dictCount'), peopleCount: $('#peopleCount'), toast: $('#toast'),
@@ -2285,6 +2482,7 @@ els.remember.checked = remembered;
 if (remembered) {
   els.people.value = local.get('czystyprompt.people') ?? '';
   els.terms.value = local.get('czystyprompt.terms') ?? '';
+  els.keep.value = local.get('czystyprompt.keep') ?? '';
   try { writeOptions(JSON.parse(local.get('czystyprompt.options') ?? '{}')); } catch { writeOptions(defaults); }
 } else writeOptions(defaults);
 
@@ -2293,9 +2491,10 @@ function persistSettings() {
     local.set('czystyprompt.remember', '1');
     local.set('czystyprompt.people', els.people.value);
     local.set('czystyprompt.terms', els.terms.value);
+    local.set('czystyprompt.keep', els.keep.value);
     local.set('czystyprompt.options', JSON.stringify(readOptions()));
   } else {
-    for (const k of ['czystyprompt.remember', 'czystyprompt.people', 'czystyprompt.terms', 'czystyprompt.options']) local.del(k);
+    for (const k of ['czystyprompt.remember', 'czystyprompt.people', 'czystyprompt.terms', 'czystyprompt.keep', 'czystyprompt.options']) local.del(k);
   }
 }
 
@@ -2312,6 +2511,7 @@ try {
 const apply = (s) => {
   if (s.peopleText !== els.people.value) s.setPeople(els.people.value);
   if (s.termsText !== els.terms.value) s.setTerms(els.terms.value);
+  if (s.keepText !== els.keep.value) s.setKeep(els.keep.value);
   s.setOptions(readOptions());
   return s;
 };
@@ -2323,16 +2523,17 @@ const saveSession = () => tab.set('czystyprompt.session', JSON.stringify(committ
 const esc = (s) => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const catName = (cat) => {
   if (cat === 'osoba') return 'osoba';
+  if (cat === 'kolumna') return 'komórka tabeli';
   const label = CATEGORIES[cat]?.label ?? 'ukryte';
   return label === label.toLocaleUpperCase('pl') ? label : label.toLocaleLowerCase('pl'); // PESEL zostaje PESEL
 };
 
 function renderSegments(target, segments, kind) {
   target.innerHTML = segments
-    .map((s) => {
+    .map((s, i) => {
       if (!s.cat) return esc(s.text);
-      const title = kind === 'mask' ? `Ukryte (${catName(s.cat)}): ${s.original}` : `W odpowiedzi AI było: ${s.original}`;
-      return `<mark class="${kind === 'mask' ? 'r' : 'back'}" data-cat="${esc(s.cat)}" title="${esc(title)}">${esc(s.text)}</mark>`;
+      const title = kind === 'mask' ? `Ukryte (${catName(s.cat)}): ${s.original}. Kliknij, żeby nie ukrywać.` : `W odpowiedzi AI było: ${s.original}`;
+      return `<mark class="${kind === 'mask' ? 'r' : 'back'}" data-cat="${esc(s.cat)}" data-i="${i}" title="${esc(title)}">${esc(s.text)}</mark>`;
     })
     .join('');
 }
@@ -2354,9 +2555,39 @@ function statsLine(stats) {
   return parts.length ? 'Ukryto: ' + parts.join(' · ') : 'Nie znaleziono danych osobowych. Przeczytaj tekst, zanim go wyślesz.';
 }
 
+// ---------- tabela z Excela ----------
+
+let table = null;
+let tableSig = '';
+let tableHide = [];
+function refreshTable() {
+  const tb = detectTable(els.src.value);
+  if (!tb) { table = null; tableSig = ''; els.tablebar.hidden = true; return; }
+  const sig = `${tb.delim}|${tb.header}|${tb.columns.map((c) => c.name).join('|')}|${tb.columns.length}`;
+  if (sig !== tableSig) { tableSig = sig; tableHide = previewSession().suggestColumns(tb); }
+  table = tb;
+  const rows = tb.rows.length - (tb.header ? 1 : 0);
+  const cols = tb.columns.length;
+  els.tbInfo.textContent = `Tabela: ${rows} ${plural(rows, 'wiersz', 'wiersze', 'wierszy')}, ${cols} ${plural(cols, 'kolumna', 'kolumny', 'kolumn')}.`;
+  els.chips.innerHTML = tb.columns
+    .map((c, i) => `<button class="chip" type="button" data-i="${i}" aria-pressed="${!!tableHide[i]}"><span class="l">${c.letter}</span>${esc(c.name || `Kolumna ${c.letter}`)}</button>`)
+    .join('');
+  els.tablebar.hidden = false;
+}
+const tableOpts = () => (table ? { table, hide: tableHide } : {});
+els.chips.addEventListener('click', (e) => {
+  const b = e.target.closest('.chip');
+  if (!b) return;
+  const i = Number(b.dataset.i);
+  tableHide[i] = !tableHide[i];
+  updateMasked();
+});
+
 let lastMasked = null;
 function updateMasked() {
   const text = els.src.value;
+  closePop();
+  refreshTable();
   if (!text.trim()) {
     els.masked.innerHTML = '';
     els.stats.textContent = '';
@@ -2365,7 +2596,7 @@ function updateMasked() {
     lastMasked = null;
     return;
   }
-  const r = previewSession().anonymize(text);
+  const r = previewSession().anonymize(text, tableOpts());
   lastMasked = r;
   renderSegments(els.masked, r.segments, 'mask');
   els.stats.innerHTML = statsLine(r.stats);
@@ -2449,7 +2680,8 @@ function toast(msg) {
 async function copyMasked() {
   if (!els.src.value.trim()) return;
   apply(committed);
-  const r = committed.anonymize(els.src.value);
+  refreshTable();
+  const r = committed.anonymize(els.src.value, tableOpts());
   saveSession();
   renderDict();
   const ok = await copy(r.text);
@@ -2503,7 +2735,7 @@ let timer;
 const debounce = (fn, ms = 120) => () => { clearTimeout(timer); timer = setTimeout(fn, ms); };
 els.src.addEventListener('input', debounce(updateMasked));
 els.ai.addEventListener('input', debounce(updateRestored));
-for (const el of [els.people, els.terms]) {
+for (const el of [els.people, els.terms, els.keep]) {
   el.addEventListener('input', debounce(() => { updatePeopleCount(); updateMasked(); persistSettings(); }, 200));
 }
 document.querySelector('aside.settings').addEventListener('change', (e) => {
@@ -2567,6 +2799,93 @@ $('#clear').addEventListener('click', () => {
   updateMasked();
   updateRestored();
 });
+
+// ---------- ręcznie: ukryj zaznaczone / nie ukrywaj ----------
+
+const sameLine = (a, b) => a.toLocaleLowerCase('pl') === b.toLocaleLowerCase('pl');
+const linesOf = (ta) => ta.value.split('\n').map((l) => l.trim()).filter(Boolean);
+function addLine(ta, line) {
+  const lines = linesOf(ta);
+  if (!lines.some((l) => sameLine(l.split('=')[0].trim(), line))) lines.push(line);
+  ta.value = lines.join('\n');
+}
+function removeLine(ta, line) {
+  ta.value = linesOf(ta).filter((l) => !sameLine(l, line)).join('\n');
+}
+const titleCase = (s) => s.replace(/(^|[\s-])(\p{Ll})/gu, (m, a, b) => a + b.toLocaleUpperCase('pl'));
+
+let pendingSel = '';
+function trackSelection() {
+  let t = '';
+  if (document.activeElement === els.src) {
+    t = els.src.value.slice(els.src.selectionStart, els.src.selectionEnd);
+  } else {
+    const sel = getSelection();
+    if (sel && !sel.isCollapsed && els.masked.contains(sel.anchorNode) && els.masked.contains(sel.focusNode)) {
+      // zaznaczenie zahaczające o już ukryte fragmenty pomijamy
+      const touchesMark = [...els.masked.querySelectorAll('mark')].some((m) => sel.containsNode(m, true));
+      if (!touchesMark) t = sel.toString();
+    }
+  }
+  t = t.trim().replace(/\s+/g, ' ');
+  if (t.length < 2 || t.length > 80 || /[\[\]]/.test(t)) t = '';
+  pendingSel = t;
+  els.hideSel.disabled = !t;
+  els.hideSel.textContent = t ? `Ukryj „${t.length > 24 ? t.slice(0, 23) + '…' : t}”` : 'Ukryj zaznaczone';
+}
+document.addEventListener('selectionchange', trackSelection);
+for (const ev of ['select', 'keyup', 'mouseup']) els.src.addEventListener(ev, trackSelection);
+els.hideSel.addEventListener('mousedown', (e) => e.preventDefault()); // nie zabieraj zaznaczenia
+els.hideSel.addEventListener('click', () => {
+  const t = pendingSel;
+  if (!t) return;
+  // „Jan Wiśniewski” → lista osób (odmiana, zdrobnienia); reszta → słowa do ukrycia
+  const person = /^\p{Lu}[\p{Ll}'’-]+(?:[ -]\p{Lu}[\p{Ll}'’-]+){1,2}$/u.test(t);
+  if (person) addLine(els.people, t);
+  else addLine(els.terms, t);
+  removeLine(els.keep, t);
+  updatePeopleCount();
+  persistSettings();
+  updateMasked();
+  toast(person ? `Dodane do „Twoi ludzie”: ${t}` : `Dodane do „Słowa do ukrycia”: ${t}`);
+  pendingSel = '';
+  els.hideSel.disabled = true;
+  els.hideSel.textContent = 'Ukryj zaznaczone';
+});
+
+let popDo = null;
+function closePop() { els.pop.hidden = true; popDo = null; }
+els.masked.addEventListener('click', (e) => {
+  const m = e.target.closest('mark.r');
+  if (!m || !getSelection().isCollapsed) return;
+  const seg = lastMasked?.segments[Number(m.dataset.i)];
+  if (!seg) return;
+  if (seg.cat === 'kolumna') {
+    const col = table?.columns[seg.col];
+    els.popAction.textContent = `Pokaż kolumnę „${col?.name || `Kolumna ${col?.letter ?? ''}`}”`;
+    popDo = () => { tableHide[seg.col] = false; updateMasked(); };
+  } else {
+    const word = seg.cat === 'osoba' && seg.base ? titleCase(seg.base) : seg.original;
+    els.popAction.textContent = `Nie ukrywaj „${word}”`;
+    popDo = () => {
+      addLine(els.keep, word);
+      persistSettings();
+      updateMasked();
+      toast(`„${word}” nie będzie ukrywane. Cofniesz to w ustawieniach: „Nie ukrywaj”.`);
+    };
+  }
+  const r = m.getBoundingClientRect();
+  els.pop.hidden = false;
+  const w = els.pop.offsetWidth;
+  els.pop.style.left = `${Math.max(8, Math.min(r.left + scrollX, scrollX + innerWidth - w - 8))}px`;
+  els.pop.style.top = `${r.bottom + scrollY + 6}px`;
+  els.popAction.focus();
+  e.stopPropagation();
+});
+els.popAction.addEventListener('click', () => { const f = popDo; closePop(); f?.(); });
+document.addEventListener('click', (e) => { if (!els.pop.hidden && !els.pop.contains(e.target)) closePop(); });
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closePop(); });
+addEventListener('resize', closePop);
 
 // motyw
 const theme = local.get('czystyprompt.theme');

@@ -6,6 +6,7 @@ import { dictionary, parseList, buildListIndex, detectPeople, tokenize, adjacent
 import { paradigm, CASES, applyCasing, lower } from './declension.js';
 import { SENSITIVE_TOPICS, DIMINUTIVES } from './data/lexicon.js';
 import { assignFake, bestVariant } from './pseudonyms.js';
+import { hiddenCells } from './table.js';
 
 export const DEFAULT_OPTIONS = {
   mode: 'natural', // 'natural' = zmyślone imiona i nazwiska, 'tags' = [OSOBA-1]
@@ -13,12 +14,12 @@ export const DEFAULT_OPTIONS = {
   useDictionary: true,
   categories: {
     email: true, profil: true, konto: true, karta: true, pesel: true, nip: true, regon: true,
-    dokument: true, telefon: true, adres: true, urodzenie: true, kwota: false, data: false,
+    dokument: true, telefon: true, adres: true, urodzenie: true, wiek: true, kwota: false, data: false,
   },
   warnSensitive: true,
 };
 
-const PRIORITY = ['email', 'profil', 'custom', 'konto', 'karta', 'pesel', 'nip', 'regon', 'dokument', 'urodzenie', 'adres', 'telefon', 'osoba', 'kwota', 'data'];
+const PRIORITY = ['kolumna', 'email', 'profil', 'custom', 'konto', 'karta', 'pesel', 'nip', 'regon', 'dokument', 'urodzenie', 'wiek', 'adres', 'telefon', 'osoba', 'kwota', 'data'];
 const CASE_ORDER = ['M', 'D', 'B', 'C', 'N', 'Ms', 'W'];
 const pickCase = (cases) => CASE_ORDER.find((c) => cases.includes(c)) ?? 'M';
 const kindOf = (part) => (part === 'last' ? 'last' : 'first');
@@ -40,7 +41,7 @@ export function parseTerms(text) {
 }
 
 export class Session {
-  constructor({ people = '', terms = '', options = {} } = {}) {
+  constructor({ people = '', terms = '', keep = '', options = {} } = {}) {
     this.dict = dictionary();
     this.options = { ...DEFAULT_OPTIONS, ...options, categories: { ...DEFAULT_OPTIONS.categories, ...(options.categories ?? {}) } };
     this.entities = [];
@@ -48,6 +49,24 @@ export class Session {
     this.listEntity = new Map(); // indeks osoby z listy → encja
     this.setPeople(people);
     this.setTerms(terms);
+    this.setKeep(keep);
+  }
+
+  // „Nie ukrywaj”: słowa, których użytkownik nie chce podmieniać (np. dział „Wilk”, nazwa produktu)
+  setKeep(text) {
+    this.keepText = text;
+    this.keep = new Set(text.split(/\r?\n/).map((l) => lower(l.trim())).filter(Boolean));
+  }
+
+  #kept(text, s) {
+    if (!this.keep.size) return false;
+    if (this.keep.has(lower(text.slice(s.start, s.end)))) return true;
+    if (s.cat === 'osoba') {
+      const named = s.mention.tokens.filter((x) => x.part !== 'initial');
+      if (this.keep.has(named.map((x) => lower(x.lemma ?? '')).join(' '))) return true;
+      return named.every((x) => this.keep.has(x.tok.low) || this.keep.has(lower(x.lemma ?? '')));
+    }
+    return false;
   }
 
   setPeople(text) {
@@ -170,9 +189,14 @@ export class Session {
 
   // ---------- ukrywanie ----------
 
-  anonymize(text) {
+  // table: wynik detectTable(text), hide: [true/false dla kolumn] — komórki ukrytych kolumn → [WIEK-1]
+  anonymize(text, { table = null, hide = [] } = {}) {
     const opts = this.options;
     const spans = [];
+
+    if (table) {
+      for (const c of hiddenCells(table, hide)) spans.push({ start: c.start, end: c.end, cat: 'kolumna', tag: c.tag, col: c.col, value: c.value, norm: lower(c.value) });
+    }
 
     for (const t of this.terms) {
       for (const m of text.matchAll(t.re)) spans.push({ start: m.index, end: m.index + m[0].length, cat: 'custom', tag: t.label, value: m[0], norm: lower(t.term) });
@@ -192,6 +216,8 @@ export class Session {
       if (chosen.some((c) => s.start < c.end && c.start < s.end)) continue;
       chosen.push(s);
     }
+    // „Nie ukrywaj” wygrywa z wykryciem, ale nie z ukrytą kolumną (tę użytkownik wybrał sam)
+    for (let i = chosen.length - 1; i >= 0; i--) if (chosen[i].cat !== 'kolumna' && this.#kept(text, chosen[i])) chosen.splice(i, 1);
     chosen.sort((a, b) => a.start - b.start);
 
     const segments = [];
@@ -218,10 +244,12 @@ export class Session {
         const m = s.mention;
         const e = s.entity;
         const out = this.#renderMention(text, m, e);
-        segments.push({ text: out, original: text.slice(m.start, m.end), cat: 'osoba', entity: e.id, source: m.source });
+        // forma podstawowa („Piotr Wilk”) — do listy „Nie ukrywaj”
+        const base = m.tokens.filter((x) => x.part !== 'initial').map((x) => x.lemma).join(' ');
+        segments.push({ text: out, original: text.slice(m.start, m.end), cat: 'osoba', entity: e.id, source: m.source, base });
       } else {
         const tag = this.#valueTag(s.tag, s.norm, s.value);
-        segments.push({ text: tag, original: s.value, cat: s.cat });
+        segments.push({ text: tag, original: s.value, cat: s.cat, ...(s.col !== undefined ? { col: s.col } : {}) });
       }
       pos = s.end;
     }
@@ -450,6 +478,28 @@ export class Session {
     return parts.map((x) => applyCasing(lower(x), 'title')).join(' ');
   }
 
+  // Które kolumny tabeli ukryć: nagłówek z danymi osobowymi albo co najmniej połowa komórek z wykrytą osobą lub numerem
+  suggestColumns(table) {
+    const body = table.rows.slice(table.header ? 1 : 0);
+    return table.columns.map((col) => {
+      if (col.suggested) return true;
+      // kolumny z notatkami zostają — nazwiska w nich i tak podmienimy, a reszta treści jest potrzebna AI
+      if (/uwag|notatk|komentarz|opis|ocena|feedback|notes?$/i.test(col.name)) return false;
+      const cells = body.map((r) => r.cells[col.index]?.text ?? '').filter(Boolean).slice(0, 50);
+      if (!cells.length) return false;
+      // kolumna z notatkami (dłuższe teksty) zostaje — nazwiska w niej i tak podmienimy
+      const words = cells.reduce((n, c) => n + c.split(/\s+/).length, 0) / cells.length;
+      if (words > 3) return false;
+      let hits = 0;
+      for (const c of cells) {
+        const found = detectStructured(c, this.options.categories).length ||
+          detectPeople(c, { dict: this.dict, listIndex: this.listIndex, useDictionary: this.options.useDictionary }).length;
+        if (found) hits++;
+      }
+      return hits / cells.length >= 0.6;
+    });
+  }
+
   // ---------- podgląd słownika i zapis ----------
 
   mapping() {
@@ -471,6 +521,7 @@ export class Session {
       options: this.options,
       people: this.peopleText,
       terms: this.termsText,
+      keep: this.keepText,
       entities: this.entities,
       values: [...this.values].map(([tag, m]) => [tag, [...m]]),
     };
@@ -478,7 +529,7 @@ export class Session {
 
   static fromJSON(data) {
     if (!['czystyprompt-sesja', 'maska-sesja'].includes(data?.format)) throw new Error('To nie jest plik sesji CzystyPrompt.');
-    const s = new Session({ people: data.people ?? '', terms: data.terms ?? '', options: data.options ?? {} });
+    const s = new Session({ people: data.people ?? '', terms: data.terms ?? '', keep: data.keep ?? '', options: data.options ?? {} });
     s.entities = data.entities ?? [];
     s.values = new Map((data.values ?? []).map(([tag, arr]) => [tag, new Map(arr)]));
     s.setPeople(s.peopleText);
@@ -490,8 +541,10 @@ export function sensitiveWarnings(text) {
   const out = [];
   for (const t of SENSITIVE_TOPICS) {
     t.re.lastIndex = 0;
-    const found = new Set([...text.matchAll(t.re)].map((m) => m[0].toLocaleLowerCase('pl')));
-    if (found.size) out.push({ label: t.label, words: [...found].slice(0, 5) });
+    // bez powtórzeń, ale w pisowni z tekstu („L4”, nie „l4”, które wygląda jak „14”)
+    const found = new Map();
+    for (const m of text.matchAll(t.re)) if (!found.has(m[0].toLocaleLowerCase('pl'))) found.set(m[0].toLocaleLowerCase('pl'), m[0]);
+    if (found.size) out.push({ label: t.label, words: [...found.values()].slice(0, 5) });
   }
   return out;
 }

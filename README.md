@@ -26,13 +26,15 @@ Czym różni się od innych anonimizatorów:
 - **Odmiana przez przypadki.** Polskie nazwiska się odmieniają. Jeśli AI napisze „porozmawiaj z Adamem Lewandowskim”, CzystyPrompt wstawi „porozmawiaj z Janem Kowalskim”, a nie „z Jan Kowalski”.
 - **Lista „Twoi ludzie”.** Wklejasz listę osób (np. z kadr) i te osoby są ukrywane zawsze: w każdej odmianie, w zdrobnieniach (Katarzyna, Kasia, Kasi, z Kasią), z samym nazwiskiem albo inicjałem.
 - **Naturalne pseudonimy.** Zamiast `[OSOBA-1]` AI dostaje zmyślone imię i nazwisko tej samej płci i podobnego wzoru odmiany, więc pisze naturalnie i nie gubi kontekstu. Znaczniki `[OSOBA-1]` też są do wyboru.
+- **Tabele z Excela.** Wklejasz tabelę (np. eksport z kadr) i klikasz, które kolumny ukryć — imię, nazwisko, wiek, wynagrodzenie zamieniają się na znaczniki `[WIEK-1]`, `[WYNAGRODZENIE-2]`, a dział czy stanowisko zostają, żeby AI mogło coś z nimi zrobić. Kolumny z danymi osobowymi są zaznaczone z góry.
+- **Ręczne poprawki.** Zaznacz słowo, które automat przepuścił, i kliknij „Ukryj”. Kliknij podświetlenie, które jest zbędne (dział „Orlik” wzięty za nazwisko), i wybierz „Nie ukrywaj”.
 - **Zero sieci.** Strona ma wpisaną blokadę (Content Security Policy), która nie pozwala jej niczego wysłać ani pobrać. Otwórz kartę Sieć w narzędziach przeglądarki i sprawdź.
 
 ## Jak używać
 
 1. Wejdź na [czystyprompt.nocodework.io](https://czystyprompt.nocodework.io) albo otwórz [`index.html`](index.html) z dysku (link „Pobierz na dysk” na dole strony) — działa też bez internetu.
 2. Opcjonalnie wklej listę osób i słowa do ukrycia (np. `Transbud = Firma`).
-3. Wklej tekst w kroku 1 i kliknij **Kopiuj do AI** (albo `Ctrl/⌘ + Enter`).
+3. Wklej tekst albo tabelę w kroku 1, popraw ręcznie, jeśli trzeba (zaznacz → „Ukryj”, kliknij podświetlenie → „Nie ukrywaj”), i kliknij **Kopiuj do AI** (albo `Ctrl/⌘ + Enter`).
 4. Odpowiedź AI wklej w kroku 2 i skopiuj wersję z prawdziwymi danymi.
 
 Słownik podmian żyje w karcie przeglądarki. Jeśli odpowiedź z AI przyjdzie później, zapisz sesję do pliku i wczytaj ją, gdy będzie potrzebna. Ten plik zawiera prawdziwe dane, więc trzymaj go u siebie.
@@ -44,6 +46,8 @@ Słownik podmian żyje w karcie przeglądarki. Jeśli odpowiedź z AI przyjdzie 
 | Osoby z twojej listy | wszystkie formy odmiany, zdrobnienia, samo nazwisko, inicjał, nazwiska dwuczłonowe |
 | Inne imiona i nazwiska | ok. 1,6 tys. imion i 35 tys. nazwisk z rejestru PESEL (ok. 87% populacji), tytuły („pan”, „dr”), typowe końcówki (-ski, -wicz, -czyk) |
 | PESEL, NIP, REGON, numer konta, karta, dowód osobisty | wzorzec + suma kontrolna (przypadkowe liczby nie są brane za PESEL) |
+| Wiek | „34-letni”, „35-latka”, „wiek: 52”, „Kowalski, lat 45”, „ma 29 lat” (staż w rodzaju „12 lat w firmie” zostaje) |
+| Kolumny tabeli | wklejonej z Excela / Arkuszy Google albo CSV ze średnikiem — wybierasz, które kolumny ukryć |
 | E-mail, telefon, adres, kod pocztowy, data urodzenia, linki do profili | wzorce |
 | Kwoty, wszystkie daty | do włączenia w ustawieniach |
 | Dane o zdrowiu, wyznaniu, związkach zawodowych, karalności | **tylko ostrzeżenie** — to treść, nie identyfikator; decyzja należy do ciebie |
@@ -102,10 +106,11 @@ npm run build                # składa index.html z app/ i src/
 npm run data                 # pobiera dane PESEL z dane.gov.pl i odbudowuje słowniki
 ```
 
-Struktura: `src/declension.js` (odmiana), `src/detectors.js` (numery i wzorce), `src/people.js` (osoby), `src/pseudonyms.js`, `src/session.js` (ukryj / przywróć), `app/` (interfejs), `scripts/` (build, dane, benchmark).
+Struktura: `src/declension.js` (odmiana), `src/detectors.js` (numery i wzorce), `src/people.js` (osoby), `src/pseudonyms.js`, `src/table.js` (tabele), `src/session.js` (ukryj / przywróć), `app/` (interfejs), `brand/` (znak, obrazek do social media), `scripts/` (build, dane, benchmark).
 
 ## Plany
 
+- wtyczka do przeglądarki (panel boczny obok ChatGPT, skrót klawiszowy),
 - integracja z Claude Code (serwer MCP + hook, żeby agent czytał pliki już po pseudonimizacji),
 - aplikacja z globalnym skrótem klawiszowym (kopiujesz tekst → skrót → w schowku jest wersja bez danych),
 - więcej zdrobnień i nazw instytucji, czytanie plików .docx i .pdf.

@@ -135,3 +135,42 @@ test('nazwy miejscowości z łącznikiem nie są osobami', () => {
   const t = 'Jedziemy do Bielsko-Białej, Kędzierzyna-Koźla i Skarżyska-Kamiennej. Województwo Kujawsko-Pomorskie.';
   assert.equal(s.anonymize(t).text, t);
 });
+
+test('tabela z Excela: ukryte kolumny dostają znaczniki, reszta zostaje, powrót 1:1', async () => {
+  const { detectTable } = await import('../src/table.js');
+  const t = 'Imię\tNazwisko\tWiek\tDział\tWynagrodzenie\tUwagi\nJan\tKowalski\t34\tLogistyka\t6500\trozmawiał z Kasią\nAnna\tZielińska\t41\tKadry\t7200\t\nJan\tNowak\t29\tLogistyka\t6100\tL4';
+  const s = new Session();
+  const tb = detectTable(t);
+  assert.ok(tb && tb.header);
+  const hide = s.suggestColumns(tb);
+  assert.deepEqual(hide, [true, true, true, false, true, false]); // „Uwagi” to notatki — zostają
+  const a = s.anonymize(t, { table: tb, hide });
+  assert.ok(!/Kowalski|Zielińska|6500|\t34\t/.test(a.text), a.text);
+  assert.match(a.text, /\[IMIĘ-1\]\t\[NAZWISKO-1\]\t\[WIEK-1\]\tLogistyka/);
+  assert.match(a.text, /\[IMIĘ-1\]\t\[NAZWISKO-3\]/); // ten sam „Jan” = ten sam znacznik
+  assert.ok(!/Kasią/.test(a.text), 'nazwisko w notatce i tak podmienione');
+  assert.equal(s.restore(a.text).text, t);
+});
+
+test('zwykły tekst i zdania ze średnikiem to nie tabela', async () => {
+  const { detectTable } = await import('../src/table.js');
+  assert.equal(detectTable('Zebranie; potem kawa; i tak dalej.\nDrugi wiersz bez średnika.'), null);
+  assert.equal(detectTable('Jedna linia\tz tabulatorem'), null);
+});
+
+test('wiek: „34-letni”, „wiek: 52”, „lat 45” tak; staż „12 lat w firmie” nie', () => {
+  const s = new Session();
+  const a = s.anonymize('Kandydat 34-letni. Wiek: 52. Kowalski, lat 45. Pracuje u nas 12 lat, 10 lat doświadczenia.');
+  assert.equal(a.stats.wiek, 3, a.text);
+  assert.match(a.text, /12 lat/);
+  assert.match(a.text, /10 lat doświadczenia/);
+});
+
+test('„Nie ukrywaj”: słowo z listy zostaje, pełne imię i nazwisko dalej ukryte', () => {
+  const s = new Session({ keep: 'Wilk' });
+  const a = s.anonymize('Zespół Wilk wygrał. Rozmawiałem z Piotrem Wilkiem.');
+  assert.match(a.text, /Zespół Wilk wygrał/);
+  assert.ok(!/Wilkiem/.test(a.text), a.text);
+  const s2 = new Session({ keep: 'Piotr Wilk' });
+  assert.match(s2.anonymize('Rozmawiałem z Piotrem Wilkiem.').text, /Piotrem Wilkiem/);
+});
